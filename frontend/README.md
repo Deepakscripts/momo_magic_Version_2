@@ -185,7 +185,16 @@ The application will be available at `http://localhost:5173` (or the next availa
 
 ### Admin Dashboard
 
-- **📊 Analytics** - Real-time sales metrics, revenue charts, and performance indicators  
+- **📊 Analytics** - Comprehensive real-time analytics dashboard
+  - **Stats Cards**: Total Revenue, Total Orders, Avg. Order Value, Customer Repeat Rate with growth % indicators
+  - **Enhanced Revenue Chart**: Hourly breakdown (Today) or Daily breakdown (Week/Month)
+  - **Peak Order Times**: Bar chart showing average orders per hour (7-day average for weekly view)
+  - **New Customers per Day**: Track customer acquisition over time
+  - **Top & Least Selling Items**: Identify best and worst performers
+  - **Popular Food Combos**: Analytics on frequently ordered item combinations
+  - **Time Period Filters**: Today, This Week, This Month views
+  - **Refresh Button**: Manual data refresh
+  - **IST Timezone Support**: All times displayed in India Standard Time
 - **📋 Order Management** - View, update, and manage customer orders with real-time notifications
 - **💰 Payment Management** - Track payment requests, billing status (Paid/Unpaid/Pending)
 - **🧾 Bill Management** - Generate, view, and manage customer bills
@@ -197,7 +206,7 @@ The application will be available at `http://localhost:5173` (or the next availa
 - **📦 Inventory Management** - Track stock levels, add/edit inventory items
 - **👥 Employee Management**
   - Add, edit, remove employees
-  - Track employee attendance
+  - Track employee attendance with CSV import
   - Manage salaries and roles
 - **👤 Admin Profile** - View and update admin account details
 - **🔐 Authentication** - Secure login with JWT tokens and password reset via OTP
@@ -443,7 +452,6 @@ VITE_SOCKET_URL=https://your-backend-domain.com
 | `eslint` | Code linting |
 | `tailwindcss` | CSS processing |
 | `nodemon` | Auto-restart dev server |
-
 
 ## 🔗 Related Documentation
 

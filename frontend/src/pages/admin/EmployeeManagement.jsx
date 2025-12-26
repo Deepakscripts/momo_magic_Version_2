@@ -3,7 +3,7 @@
  * Displays employee list with CRUD operations and attendance status management.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -41,6 +41,8 @@ import {
     Trash2,
     CalendarDays,
     Loader2,
+    Upload,
+    FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +75,10 @@ export default function EmployeeManagement() {
     // Attendance calendar modal state
     const [calendarOpen, setCalendarOpen] = useState(false);
     const [selectedEmployeeForCalendar, setSelectedEmployeeForCalendar] = useState(null);
+
+    // CSV upload state
+    const [isUploadingCSV, setIsUploadingCSV] = useState(false);
+    const fileInputRef = useRef(null);
 
     // Fetch employees on mount and when filters change
     useEffect(() => {
@@ -257,6 +263,79 @@ export default function EmployeeManagement() {
         URL.revokeObjectURL(url);
     };
 
+    // Download CSV template
+    const handleDownloadTemplate = async () => {
+        try {
+            const blob = await employeeService.downloadAttendanceTemplate();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const timestamp = new Date().toISOString().split('T')[0];
+            a.setAttribute('download', `attendance-template-${timestamp}.csv`);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast.success('CSV template downloaded successfully');
+        } catch (error) {
+            console.error('Error downloading CSV template:', error);
+            toast.error('Failed to download CSV template');
+        }
+    };
+
+    // Handle CSV file selection and upload
+    const handleUploadCSV = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        if (!file.name.endsWith('.csv')) {
+            toast.error('Please upload a CSV file');
+            return;
+        }
+
+        setIsUploadingCSV(true);
+
+        try {
+            const result = await employeeService.uploadAttendanceCSV(file);
+
+            // Show results
+            if (result.summary.successful > 0) {
+                toast.success(
+                    `Successfully updated ${result.summary.successful} employee(s)`
+                );
+
+                // Refresh employees and stats
+                fetchEmployees();
+                fetchStats();
+            }
+
+            // Show errors if any
+            if (result.errors && result.errors.length > 0) {
+                const errorMessage = result.errors.slice(0, 3).map(err =>
+                    `Row ${err.row}: ${err.error}`
+                ).join('\n');
+
+                const moreErrors = result.errors.length > 3
+                    ? `\n...and ${result.errors.length - 3} more errors`
+                    : '';
+
+                toast.error(`Upload completed with errors:\n${errorMessage}${moreErrors}`, {
+                    duration: 5000
+                });
+            }
+        } catch (error) {
+            console.error('Error uploading CSV:', error);
+            toast.error(error.response?.data?.message || 'Failed to upload CSV file');
+        } finally {
+            setIsUploadingCSV(false);
+            // Reset file input
+            if (event.target) {
+                event.target.value = '';
+            }
+        }
+    };
+
     // Get select trigger style based on status
     const getSelectTriggerClass = (status) => {
         const classes = {
@@ -301,6 +380,14 @@ export default function EmployeeManagement() {
                                     className="pl-10 w-64 bg-gray-50 border-gray-300 text-gray-900 placeholder:text-gray-500"
                                 />
                             </div>
+
+                            {/* View All Attendance Button */}
+                            <Link to="/admin/attendance/all">
+                                <Button className="bg-purple-500 hover:bg-purple-600 text-white">
+                                    <CalendarDays className="h-4 w-4 mr-2" />
+                                    View All Attendance
+                                </Button>
+                            </Link>
 
                             {/* Notification */}
                             <Button
@@ -405,11 +492,54 @@ export default function EmployeeManagement() {
                                 </Button>
                             ))}
                         </div>
-                        <div className="ml-4">
-                            <Button onClick={exportCSV} className="bg-orange-500 hover:bg-orange-600 text-white cursor-pointer">
+
+                        <div className="ml-auto flex items-center gap-3">
+                            {/* Export current view */}
+                            <Button
+                                onClick={exportCSV}
+                                variant="outline"
+                                className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                            >
                                 <DownloadCloud className="h-4 w-4 mr-2" />
-                                Export CSV
+                                Export Current View
                             </Button>
+
+                            {/* Download CSV Template */}
+                            <Button
+                                onClick={handleDownloadTemplate}
+                                className="bg-blue-500 hover:bg-blue-600 text-white"
+                            >
+                                <FileText className="h-4 w-4 mr-2" />
+                                Download CSV Template
+                            </Button>
+
+                            {/* Upload CSV */}
+                            <Button
+                                onClick={() => fileInputRef?.current?.click()}
+                                disabled={isUploadingCSV}
+                                className="bg-green-500 hover:bg-green-600 text-white"
+                            >
+                                {isUploadingCSV ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        Uploading...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="h-4 w-4 mr-2" />
+                                        Upload Attendance CSV
+                                    </>
+                                )}
+                            </Button>
+
+                            {/* Hidden file input */}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".csv"
+                                onChange={handleUploadCSV}
+                                style={{ display: 'none' }}
+                            />
                         </div>
                     </div>
 
@@ -440,7 +570,7 @@ export default function EmployeeManagement() {
 
                     {/* Employee Table */}
                     {!isLoading && filteredEmployees.length > 0 && (
-                        <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+                        <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-x-auto">
                             <Table>
                                 <TableHeader>
                                     <TableRow className="border-gray-200 hover:bg-orange-50/50 bg-orange-50">
@@ -549,58 +679,60 @@ export default function EmployeeManagement() {
                                             </TableCell>
 
                                             {/* Actions */}
-                                            <TableCell className="text-right relative">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => toggleRowMenu(employee._id)}
-                                                    className="text-gray-600 hover:text-orange-500 hover:bg-orange-50"
-                                                >
-                                                    <MoreVertical className="h-4 w-4" />
-                                                </Button>
+                                            <TableCell className="text-right">
+                                                <div className="relative">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => toggleRowMenu(employee._id)}
+                                                        className="text-gray-600 hover:text-orange-500 hover:bg-orange-50"
+                                                    >
+                                                        <MoreVertical className="h-4 w-4" />
+                                                    </Button>
 
-                                                {activeMenuId === employee._id && (
-                                                    <>
-                                                        {/* Backdrop overlay */}
-                                                        <div
-                                                            className="fixed inset-0 z-10"
-                                                            onClick={() => setActiveMenuId(null)}
-                                                        />
+                                                    {activeMenuId === employee._id && (
+                                                        <>
+                                                            {/* Backdrop overlay */}
+                                                            <div
+                                                                className="fixed inset-0 z-[100]"
+                                                                onClick={() => setActiveMenuId(null)}
+                                                            />
 
-                                                        {/* Popup menu */}
-                                                        <div className="absolute right-0 top-10 w-48 rounded-lg bg-gray-900 shadow-2xl border border-gray-700 z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                                            {/* View Calendar */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleViewCalendar(employee)}
-                                                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-100 hover:bg-gray-800 transition-colors"
-                                                            >
-                                                                <CalendarDays className="h-4 w-4" />
-                                                                <span>View Attendance</span>
-                                                            </button>
+                                                            {/* Popup menu */}
+                                                            <div className="fixed right-4 mt-2 w-52 rounded-lg bg-gray-900 shadow-2xl border border-gray-700 z-[101] overflow-visible animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                {/* View Calendar */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleViewCalendar(employee)}
+                                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-100 hover:bg-gray-800 transition-colors rounded-t-lg"
+                                                                >
+                                                                    <CalendarDays className="h-4 w-4 flex-shrink-0" />
+                                                                    <span className="whitespace-nowrap">View Attendance</span>
+                                                                </button>
 
-                                                            {/* Edit */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleEditEmployee(employee)}
-                                                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-100 hover:bg-gray-800 transition-colors border-t border-gray-800"
-                                                            >
-                                                                <Pencil className="h-4 w-4" />
-                                                                <span>Edit</span>
-                                                            </button>
+                                                                {/* Edit */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleEditEmployee(employee)}
+                                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-100 hover:bg-gray-800 transition-colors border-t border-gray-800"
+                                                                >
+                                                                    <Pencil className="h-4 w-4 flex-shrink-0" />
+                                                                    <span className="whitespace-nowrap">Edit</span>
+                                                                </button>
 
-                                                            {/* Remove */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRemoveEmployee(employee)}
-                                                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-gray-800 hover:text-red-300 transition-colors border-t border-gray-800"
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                                <span>Remove</span>
-                                                            </button>
-                                                        </div>
-                                                    </>
-                                                )}
+                                                                {/* Remove */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleRemoveEmployee(employee)}
+                                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-gray-800 hover:text-red-300 transition-colors border-t border-gray-800 rounded-b-lg"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4 flex-shrink-0" />
+                                                                    <span className="whitespace-nowrap">Remove</span>
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}

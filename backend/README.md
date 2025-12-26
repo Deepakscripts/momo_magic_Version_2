@@ -410,11 +410,74 @@ curl -X POST http://localhost:5000/api/orders \
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| `GET` | `/daily` | Get daily sales report | Yes |
-| `GET` | `/weekly` | Get weekly sales report | Yes |
-| `GET` | `/monthly` | Get monthly sales report | Yes |
-| `GET` | `/analytics` | Get comprehensive analytics | Yes |
-| `GET` | `/export-csv` | Export sales data to CSV | Yes |
+| `GET` | `/stats` | Get aggregated stats (revenue, orders, customers) | Yes |
+| `GET` | `/top-items` | Get top selling menu items | Yes |
+| `GET` | `/least-items` | Get least selling menu items | Yes |
+| `GET` | `/peak-hours` | Get peak order hours (avg for week/month) | Yes |
+| `GET` | `/revenue` | Get revenue data by day | Yes |
+| `GET` | `/recent` | Get recent sales activity | Yes |
+| `GET` | `/revenue-by-hour` | Get hourly/daily revenue breakdown | Yes |
+| `GET` | `/new-customers` | Get new customer acquisition by day | Yes |
+| `GET` | `/popular-combos` | Get popular food item combinations | Yes |
+| `GET` | `/growth-metrics` | Get growth % for KPIs vs previous period | Yes |
+
+**Query Parameters:**
+
+All endpoints accept a `period` query parameter:
+
+- `today` - Current day data
+- `week` - Last 7 days (with daily breakdown and averages)
+- `month` - Current month (with daily breakdown and averages)
+
+**Example Request:**
+
+```bash
+# Get revenue by hour for today
+curl "http://localhost:5000/api/sales/revenue-by-hour?period=today" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Get weekly peak hours (averaged)
+curl "http://localhost:5000/api/sales/peak-hours?period=week" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Example Response (Revenue by Hour - Today):**
+
+```json
+{
+  "success": true,
+  "data": [
+    { "hour": 9, "revenue": 0, "orderCount": 0 },
+    { "hour": 10, "revenue": 1250.50, "orderCount": 8 },
+    { "hour": 11, "revenue": 890.00, "orderCount": 5 },
+    ...
+  ],
+  "type": "hourly"
+}
+```
+
+**Example Response (Revenue by Hour - Week/Month):**
+
+```json
+{
+  "success": true,
+  "data": [
+    { "year": 2024, "month": 12, "day": 20, "dayOfWeek": 6, "revenue": 4500.00, "orderCount": 28, "date": "2024-12-20" },
+    { "year": 2024, "month": 12, "day": 21, "dayOfWeek": 7, "revenue": 5200.00, "orderCount": 35, "date": "2024-12-21" },
+    ...
+  ],
+  "type": "daily",
+  "period": "week"
+}
+```
+
+**Timezone Handling:**
+
+All time-based aggregations use **IST (India Standard Time, UTC+5:30)**. Timestamps stored in UTC are automatically converted to IST for:
+
+- Hourly revenue breakdown
+- Peak order hours
+- New customer aggregation by day
 
 ---
 
@@ -840,6 +903,7 @@ server {
 | `json2csv` | CSV export |
 
 ---
+
 ## 🔗 Related Documentation
 
 - [Frontend README](../frontend/README.md) - Frontend application documentation
@@ -847,5 +911,3 @@ server {
 - [Seed Scripts](#seed-scripts) - Database seeding documentation
 
 ---
-
-

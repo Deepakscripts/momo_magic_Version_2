@@ -4,6 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
+const upload = require('../middleware/upload');
 const {
     getAllEmployees,
     getEmployeeStats,
@@ -12,7 +13,10 @@ const {
     updateEmployee,
     deleteEmployee,
     updateTodayAttendance,
-    getAttendanceHistory
+    getAttendanceHistory,
+    downloadAttendanceTemplate,
+    uploadAttendanceCSV,
+    getAllAttendance
 } = require('../controllers/employeeController');
 
 // Stats route (must come before /:id to avoid conflict)
@@ -28,5 +32,10 @@ router.delete('/:id', deleteEmployee);
 // Attendance routes
 router.put('/:id/attendance', updateTodayAttendance);
 router.get('/:id/attendance-history', getAttendanceHistory);
+
+// CSV routes (must comebefore /:id to avoid conflict)
+router.get('/attendance/download-csv', downloadAttendanceTemplate);
+router.post('/attendance/upload-csv', upload.single('csvFile'), uploadAttendanceCSV);
+router.get('/attendance/all', getAllAttendance);
 
 module.exports = router;

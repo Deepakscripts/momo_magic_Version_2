@@ -11,7 +11,11 @@ const {
     getLeastSellingItems,
     getPeakOrderHours,
     getRevenueData,
-    getRecentSales
+    getRecentSales,
+    getRevenueByHour,
+    getNewCustomers,
+    getPopularCombos,
+    getGrowthMetrics
 } = require('../controllers/salesController');
 
 
@@ -36,6 +40,18 @@ router.get('/revenue', getRevenueData);
 
 // Get recent sales for activity table
 router.get('/recent', getRecentSales);
+
+// Get hourly revenue breakdown
+router.get('/revenue-by-hour', getRevenueByHour);
+
+// Get new customers data
+router.get('/new-customers', getNewCustomers);
+
+// Get popular food combos
+router.get('/popular-combos', getPopularCombos);
+
+// Get growth metrics for KPI cards
+router.get('/growth-metrics', getGrowthMetrics);
 
 
 module.exports = router;

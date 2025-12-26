@@ -2,15 +2,17 @@
  * MyOrder Page - Displays customer's order history with real-time status updates.
  * Listens to WebSocket events for live status synchronization.
  */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Clock, CheckCircle2, XCircle, RotateCw, Loader2 } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Clock, CheckCircle2, XCircle, RotateCw, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { useCart } from "@/context/CartContext.jsx";
 import { useSocket } from "@/context/SocketContext.jsx";
-import { requestPayment } from "@/services/orderService";
+import CustomerAuthContext from "@/context/CustomerAuthContext";
+import { requestPayment, getOrdersByPhone } from "@/services/orderService";
 import { toast } from "sonner";
 import Bill from "@/components/client/Bill.jsx";
 import placeholderImg from "@/assets/steam-1.png";
@@ -19,10 +21,14 @@ const MyOrder = () => {
   const [activeTab, setActiveTab] = useState("all");
   const { orderHistory, updateOrderStatus, sessionId, fetchSessionOrders, endSession } = useCart();
   const { socket } = useSocket();
+  const authContext = useContext(CustomerAuthContext);
+  const customerPhone = authContext?.customer?.phone || null;
   const [showBill, setShowBill] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [billingStatus, setBillingStatus] = useState('unpaid');
   const [isLoading, setIsLoading] = useState(true);
+  const [historicalOrders, setHistoricalOrders] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Fetch orders from server when component mounts or session changes
   useEffect(() => {
@@ -51,6 +57,35 @@ const MyOrder = () => {
 
     loadOrders();
   }, [sessionId, fetchSessionOrders]);
+
+  // Fetch historical orders when customer is authenticated
+  useEffect(() => {
+    const loadHistoricalOrders = async () => {
+      if (!customerPhone) {
+        setHistoricalOrders([]);
+        return;
+      }
+
+      setIsLoadingHistory(true);
+      try {
+        const response = await getOrdersByPhone(customerPhone);
+        if (response.success) {
+          // Filter out orders from current session to avoid duplicates
+          const pastOrders = (response.data || []).filter(
+            order => order.sessionId !== sessionId
+          );
+          setHistoricalOrders(pastOrders);
+        }
+      } catch (error) {
+        console.error('Error loading historical orders:', error);
+        // Silently fail - historical orders are supplementary data
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    loadHistoricalOrders();
+  }, [customerPhone, sessionId]);
 
   // Listen for real-time order status updates via WebSocket
   useEffect(() => {
@@ -201,14 +236,15 @@ const MyOrder = () => {
               </TabsContent>
 
               <TabsContent value="past">
-                {completedOrders.length === 0 ? (
+                {isLoadingHistory ? (
                   <div className="py-16 text-center">
-                    <p className="text-lg text-[#6b7280]">No past orders</p>
+                    <Loader2 className="h-6 w-6 animate-spin text-[#ff7a3c] mx-auto" />
+                    <p className="mt-2 text-sm text-[#6b7280]">Loading order history...</p>
                   </div>
                 ) : (
                   <PastOrdersContent
                     orders={completedOrders}
-                    onViewBill={handleViewBill}
+                    historicalOrders={historicalOrders}
                   />
                 )}
               </TabsContent>
@@ -508,74 +544,201 @@ const ActiveOrdersContent = ({ orders, onViewBill }) => {
   );
 };
 
-// Past Orders Content  
-const PastOrdersContent = ({ orders, onViewBill }) => {
-  console.log("PastOrders images:", orders.map((o) => o.image));
+// Past Orders Content - Shows order details directly without View Bill button
+const PastOrdersContent = ({ orders, historicalOrders = [] }) => {
+  const [expandedOrder, setExpandedOrder] = useState(null);
+
+  // Combine current session completed orders with historical orders
+  // Remove duplicates based on order ID
+  const allPastOrders = [...orders];
+
+  // Add historical orders that aren't already in the current session
+  historicalOrders.forEach(histOrder => {
+    if (!allPastOrders.find(o => o.id === histOrder._id)) {
+      // Transform historical order to match the format of current session orders
+      allPastOrders.push({
+        id: histOrder._id,
+        orderNumber: histOrder.orderNumber,
+        status: histOrder.status.toUpperCase(),
+        date: new Date(histOrder.createdAt).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        }),
+        fullDate: new Date(histOrder.createdAt).toLocaleDateString(),
+        time: new Date(histOrder.createdAt).toLocaleTimeString(),
+        items: histOrder.items,
+        itemCount: histOrder.items.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal: histOrder.subtotal,
+        tax: histOrder.tax,
+        total: histOrder.total,
+        image: histOrder.items[0]?.imageLink || placeholderImg,
+        barcode: histOrder.orderNumber
+      });
+    }
+  });
+
+  // Sort by date (newest first)
+  allPastOrders.sort((a, b) => {
+    const dateA = new Date(a.fullDate || a.date);
+    const dateB = new Date(b.fullDate || b.date);
+    return dateB - dateA;
+  });
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getStatusBadge = (status) => {
+    const statusLower = status.toLowerCase();
+    if (statusLower === 'served') {
+      return (
+        <Badge className="rounded-full border-green-600 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-600 hover:bg-green-50">
+          <CheckCircle2 className="mr-1 h-3 w-3" />
+          Completed
+        </Badge>
+      );
+    }
+    if (statusLower === 'cancelled') {
+      return (
+        <Badge className="rounded-full border-red-600 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600 hover:bg-red-50">
+          <XCircle className="mr-1 h-3 w-3" />
+          Cancelled
+        </Badge>
+      );
+    }
+    return (
+      <Badge className="rounded-full border-gray-600 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-600 hover:bg-gray-50">
+        {status}
+      </Badge>
+    );
+  };
+
   return (
     <div className="space-y-4">
-      {orders.map((order) => (
-        <Card
-          key={order.id}
-          className="overflow-hidden rounded-2xl border-none shadow-sm transition-all hover:shadow-md"
-        >
-          <CardContent className="p-4">
-            <div className="flex gap-4">
-              <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-[#2c2c2c] to-[#1a1a1a]">
-                <img
-                  src={order.image || placeholderImg}
-                  alt={order.orderNumber}
-                  className="h-full w-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = placeholderImg;
-                  }}
-                />
-              </div>
-
-              <div className="flex flex-1 flex-col justify-between">
-                <div>
-                  <div className="mb-1 flex items-center gap-2">
-                    <Badge className="rounded-full border-green-600 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-600 hover:bg-green-50">
-                      <CheckCircle2 className="mr-1 h-3 w-3" />
-                      {order.status}
-                    </Badge>
-                    <span className="text-xs text-[#9ca3af]">{order.date}</span>
-                  </div>
-                  <h3 className="text-base font-bold text-[#1a1a1a]">
-                    {order.items[0]?.name} Combo
-                  </h3>
-                  <p className="text-xs text-[#6b7280]">
-                    Order #{order.orderNumber} • {order.itemCount} items
-                  </p>
+      {allPastOrders.length === 0 ? (
+        <div className="py-16 text-center">
+          <p className="text-lg text-[#6b7280]">No past orders yet</p>
+          <p className="mt-2 text-sm text-[#9ca3af]">
+            Your completed orders will appear here
+          </p>
+        </div>
+      ) : (
+        allPastOrders.map((order) => (
+          <Card
+            key={order.id}
+            className="overflow-hidden rounded-2xl border-none shadow-sm transition-all hover:shadow-md"
+          >
+            <div
+              className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+            >
+              <div className="flex gap-4">
+                <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-[#2c2c2c] to-[#1a1a1a]">
+                  <img
+                    src={order.image || placeholderImg}
+                    alt={order.orderNumber}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = placeholderImg;
+                    }}
+                  />
                 </div>
-              </div>
 
-              <div className="flex flex-col items-end justify-between">
-                <span className="text-lg font-bold text-[#1a1a1a]">
-                  ₹{order.total.toFixed(2)}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 rounded-full border-[#e0e0e0] px-4 text-xs font-semibold hover:border-[#ff7a3c] hover:text-[#ff7a3c]"
-                    onClick={() => onViewBill(order)}
-                  >
-                    View Bill
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-8 rounded-full bg-[#ff7a3c] px-4 text-xs font-bold hover:bg-[#ff6825]"
-                  >
-                    <RotateCw className="mr-1 h-3 w-3" />
-                    Reorder
-                  </Button>
+                <div className="flex flex-1 flex-col justify-between">
+                  <div>
+                    <div className="mb-1 flex items-center gap-2">
+                      {getStatusBadge(order.status)}
+                      <span className="text-xs text-[#9ca3af]">{order.date}</span>
+                    </div>
+                    <h3 className="text-base font-bold text-[#1a1a1a]">
+                      {order.items[0]?.name}{order.items.length > 1 ? ` +${order.items.length - 1} more` : ''}
+                    </h3>
+                    <p className="text-xs text-[#6b7280]">
+                      Order #{order.orderNumber} • {order.itemCount} items
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end justify-between">
+                  <span className="text-lg font-bold text-[#1a1a1a]">
+                    ₹{order.total.toFixed(2)}
+                  </span>
+                  <button className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+                    {expandedOrder === order.id ? (
+                      <ChevronUp className="h-5 w-5 text-[#ff7a3c]" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-[#ff7a3c]" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      ))}
+
+            {/* Expanded Order Details */}
+            {expandedOrder === order.id && (
+              <>
+                <Separator />
+                <CardContent className="pt-4 pb-4">
+                  <div className="space-y-3">
+                    {/* Order Items */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Order Items</h4>
+                      {order.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-start py-2 border-b border-gray-100 last:border-0">
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{item.name}</p>
+                            <p className="text-sm text-gray-500">Qty: {item.quantity} × ₹{item.price.toFixed(2)}</p>
+                          </div>
+                          <p className="font-semibold text-gray-900">
+                            ₹{(item.price * item.quantity).toFixed(2)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <Separator className="my-3" />
+
+                    {/* Price Breakdown */}
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Subtotal:</span>
+                        <span className="font-medium">₹{order.subtotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Tax:</span>
+                        <span className="font-medium">₹{order.tax.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-base font-bold text-[#ff7a3c] mt-2 pt-2 border-t border-gray-200">
+                        <span>Total:</span>
+                        <span>₹{order.total.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    {/* Reorder Button */}
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <Button
+                        size="sm"
+                        className="w-full rounded-full bg-[#ff7a3c] px-4 text-sm font-bold hover:bg-[#ff6825]"
+                      >
+                        <RotateCw className="mr-2 h-4 w-4" />
+                        Reorder These Items
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </>
+            )}
+          </Card>
+        ))
+      )}
     </div>
   );
 };

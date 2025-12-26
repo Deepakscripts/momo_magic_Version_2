@@ -27,6 +27,7 @@ import EditInventory from '@/pages/admin/EditInventory'
 import Profile from '@/pages/admin/Profile'
 import EditMenu from './pages/admin/EditMenu'
 import EditEmployee from './pages/admin/EditEmployee'
+import AllAttendance from '@/pages/admin/AllAttendance'
 import PaymentsManagement from '@/pages/admin/PaymentsManagement'
 import BillsManagement from '@/pages/admin/BillsManagement'
 import Login from './pages/admin/Login'
@@ -63,6 +64,7 @@ function App() {
           <Route path='employees' element={<EmployeeManagement />} />
           <Route path='employees/add' element={<AddNewEmployee />} />
           <Route path='/admin/employees/edit/:id' element={<EditEmployee />} />
+          <Route path='attendance/all' element={<AllAttendance />} />
           <Route path='profile' element={<Profile />} />
         </Route>
       </Route>

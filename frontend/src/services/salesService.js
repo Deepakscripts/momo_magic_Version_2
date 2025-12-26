@@ -74,13 +74,62 @@ const fetchRecentSales = async (limit = 10) => {
 };
 
 
+/**
+ * Fetch hourly revenue breakdown for enhanced revenue visualization.
+ * @param {string} period - 'today', 'week', or 'month'
+ * @returns {Promise<Array>} Array of { hour, revenue, orderCount }
+ */
+const fetchRevenueByHour = async (period = 'today') => {
+    const response = await api.get('/sales/revenue-by-hour', { params: { period } });
+    return response.data;
+};
+
+
+/**
+ * Fetch new customers count over time.
+ * @param {string} period - 'week' or 'month'
+ * @returns {Promise<Array>} Array of { date, count }
+ */
+const fetchNewCustomers = async (period = 'week') => {
+    const response = await api.get('/sales/new-customers', { params: { period } });
+    return response.data;
+};
+
+
+/**
+ * Fetch popular food item combinations.
+ * @param {string} period - 'today', 'week', or 'month'
+ * @param {number} limit - Number of combos to return (default: 5)
+ * @returns {Promise<Array>} Array of { name, count, maxCount }
+ */
+const fetchPopularCombos = async (period = 'today', limit = 5) => {
+    const response = await api.get('/sales/popular-combos', { params: { period, limit } });
+    return response.data;
+};
+
+
+/**
+ * Fetch growth metrics for KPI cards (percentage changes).
+ * @param {string} period - 'today', 'week', or 'month'
+ * @returns {Promise<Object>} Growth percentages for revenue, orders, avgValue, and repeatRate
+ */
+const fetchGrowthMetrics = async (period = 'today') => {
+    const response = await api.get('/sales/growth-metrics', { params: { period } });
+    return response.data;
+};
+
+
 const salesService = {
     fetchStats,
     fetchTopSellingItems,
     fetchLeastSellingItems,
     fetchPeakOrderHours,
     fetchRevenueData,
-    fetchRecentSales
+    fetchRecentSales,
+    fetchRevenueByHour,
+    fetchNewCustomers,
+    fetchPopularCombos,
+    fetchGrowthMetrics
 };
 
 export default salesService;

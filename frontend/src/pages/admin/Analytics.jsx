@@ -19,7 +19,9 @@ import {
   ShoppingBag,
   TrendingUp,
   Users,
+  RefreshCw,
   ArrowUp,
+  ArrowDown,
   Loader2,
 } from "lucide-react";
 import AdminSidebar from "@/components/admin/Sidebar";
@@ -58,7 +60,7 @@ const styles = `
 export default function Analytics() {
   const [activeTab, setActiveTab] = useState("today");
   const [revenueTimeframe, setRevenueTimeframe] = useState("today");
-  const [customersTimeframe, setCustomersTimeframe] = useState("date-wise");
+  const [customersTimeframe, setCustomersTimeframe] = useState("week");
   const [isLoading, setIsLoading] = useState(true);
   const { socket } = useSocket();
 
@@ -68,6 +70,14 @@ export default function Analytics() {
     totalOrders: 0,
     avgOrderValue: 0,
     customerRepeatRate: 0
+  });
+
+  // Growth metrics from API
+  const [growthMetrics, setGrowthMetrics] = useState({
+    revenueGrowth: 0,
+    ordersGrowth: 0,
+    avgValueGrowth: 0,
+    repeatRateGrowth: 0
   });
 
   // Top/least selling items from API
@@ -80,6 +90,16 @@ export default function Analytics() {
   // Peak hours data
   const [peakHoursData, setPeakHoursData] = useState([]);
 
+  // Revenue by hour data
+  const [revenueByHourData, setRevenueByHourData] = useState([]);
+  const [revenueDataType, setRevenueDataType] = useState('hourly');
+
+  // New customers data
+  const [newCustomersData, setNewCustomersData] = useState({ labels: [], values: [] });
+
+  // Popular food combos
+  const [foodCombos, setFoodCombos] = useState([]);
+
   /**
    * Fetch all analytics data from the API.
    * Called on mount and when the time period changes.
@@ -88,18 +108,34 @@ export default function Analytics() {
     setIsLoading(true);
     try {
       // Fetch all data in parallel for better performance
-      const [statsResponse, topItemsResponse, leastItemsResponse, peakHoursResponse, recentResponse] =
-        await Promise.all([
-          salesService.fetchStats(activeTab),
-          salesService.fetchTopSellingItems(activeTab, 5),
-          salesService.fetchLeastSellingItems(activeTab, 5),
-          salesService.fetchPeakOrderHours(activeTab),
-          salesService.fetchRecentSales(5)
-        ]);
+      const [
+        statsResponse,
+        growthResponse,
+        topItemsResponse,
+        leastItemsResponse,
+        peakHoursResponse,
+        recentResponse,
+        revenueByHourResponse,
+        popularCombosResponse
+      ] = await Promise.all([
+        salesService.fetchStats(activeTab),
+        salesService.fetchGrowthMetrics(activeTab),
+        salesService.fetchTopSellingItems(activeTab, 5),
+        salesService.fetchLeastSellingItems(activeTab, 5),
+        salesService.fetchPeakOrderHours(activeTab),
+        salesService.fetchRecentSales(5),
+        salesService.fetchRevenueByHour(revenueTimeframe),
+        salesService.fetchPopularCombos(activeTab, 5)
+      ]);
 
       // Update stats
       if (statsResponse.success) {
         setStatsData(statsResponse.data);
+      }
+
+      // Update growth metrics
+      if (growthResponse.success) {
+        setGrowthMetrics(growthResponse.data);
       }
 
       // Format top selling items for HorizontalBarChart
@@ -108,6 +144,8 @@ export default function Analytics() {
           labels: topItemsResponse.data.map(item => item.name),
           values: topItemsResponse.data.map(item => item.quantity)
         });
+      } else {
+        setTopSellingData({ labels: [], values: [] });
       }
 
       // Format least selling items for progress bars
@@ -119,6 +157,8 @@ export default function Analytics() {
           count: item.quantity,
           maxCount
         })));
+      } else {
+        setLeastSellingItems([]);
       }
 
       // Peak hours data
@@ -138,17 +178,64 @@ export default function Analytics() {
         })));
       }
 
+      // Revenue by hour data
+      if (revenueByHourResponse.success) {
+        setRevenueByHourData(revenueByHourResponse.data);
+        setRevenueDataType(revenueByHourResponse.type || 'hourly');
+      }
+
+      // Popular food combos
+      if (popularCombosResponse.success && popularCombosResponse.data.length > 0) {
+        setFoodCombos(popularCombosResponse.data);
+      } else {
+        setFoodCombos([]);
+      }
+
     } catch (error) {
       console.error('Error fetching analytics data:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab]);
+  }, [activeTab, revenueTimeframe]);
 
   // Fetch data on mount and when period changes
   useEffect(() => {
     fetchAnalyticsData();
   }, [fetchAnalyticsData]);
+
+  // Fetch new customers data separately when timeframe changes
+  useEffect(() => {
+    const fetchNewCustomersData = async () => {
+      try {
+        const response = await salesService.fetchNewCustomers(customersTimeframe);
+        if (response.success && response.data.length > 0) {
+          // Format labels based on period type
+          const getDayOfWeekName = (dayOfWeek) => {
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            return days[dayOfWeek - 1] || '';
+          };
+
+          let labels;
+          if (customersTimeframe === 'week') {
+            // For weekly: show day names
+            labels = response.data.map(item => getDayOfWeekName(item.dayOfWeek));
+          } else {
+            // For monthly: show date numbers
+            labels = response.data.map(item => `${item.day}`);
+          }
+
+          const values = response.data.map(item => item.count);
+          setNewCustomersData({ labels, values });
+        } else {
+          setNewCustomersData({ labels: [], values: [] });
+        }
+      } catch (error) {
+        console.error('Error fetching new customers data:', error);
+      }
+    };
+
+    fetchNewCustomersData();
+  }, [customersTimeframe]);
 
   // Listen for real-time sales updates via WebSocket
   useEffect(() => {
@@ -166,14 +253,14 @@ export default function Analytics() {
     };
   }, [socket, fetchAnalyticsData]);
 
-  // Build stats cards array with real data
+  // Build stats cards array with real data from API
   const stats = [
     {
       icon: Wallet,
       label: "Total Revenue",
       value: `₹${statsData.totalRevenue.toLocaleString()}`,
-      change: "+12%",
-      isPositive: true,
+      change: `${growthMetrics.revenueGrowth >= 0 ? '+' : ''}${growthMetrics.revenueGrowth}%`,
+      isPositive: growthMetrics.revenueGrowth >= 0,
       iconBg: "bg-orange-100",
       iconColor: "text-orange-600",
       progress: Math.min((statsData.totalRevenue / 1000) * 10, 100),
@@ -182,8 +269,8 @@ export default function Analytics() {
       icon: ShoppingBag,
       label: "Total Orders",
       value: statsData.totalOrders.toLocaleString(),
-      change: "+8%",
-      isPositive: true,
+      change: `${growthMetrics.ordersGrowth >= 0 ? '+' : ''}${growthMetrics.ordersGrowth}%`,
+      isPositive: growthMetrics.ordersGrowth >= 0,
       iconBg: "bg-orange-100",
       iconColor: "text-orange-600",
       progress: Math.min(statsData.totalOrders * 10, 100),
@@ -192,8 +279,8 @@ export default function Analytics() {
       icon: TrendingUp,
       label: "Avg. Order Value",
       value: `₹${statsData.avgOrderValue.toFixed(2)}`,
-      change: "+2%",
-      isPositive: true,
+      change: `${growthMetrics.avgValueGrowth >= 0 ? '+' : ''}${growthMetrics.avgValueGrowth}%`,
+      isPositive: growthMetrics.avgValueGrowth >= 0,
       iconBg: "bg-green-100",
       iconColor: "text-green-600",
       progress: Math.min(statsData.avgOrderValue * 5, 100),
@@ -202,28 +289,15 @@ export default function Analytics() {
       icon: Users,
       label: "Customer Repeat Rate",
       value: `${statsData.customerRepeatRate}%`,
-      change: "+4%",
-      isPositive: true,
+      change: `${growthMetrics.repeatRateGrowth >= 0 ? '+' : ''}${growthMetrics.repeatRateGrowth}%`,
+      isPositive: growthMetrics.repeatRateGrowth >= 0,
       iconBg: "bg-orange-100",
       iconColor: "text-orange-600",
       progress: statsData.customerRepeatRate,
     },
   ];
 
-  // Popular Food Item Combos (keeping static for now - can be extended later)
-  const foodCombos = [
-    { name: "Momo Platter + Coke", count: 482, maxCount: 482 },
-    { name: "Jhol Momo + Soup", count: 134, maxCount: 482 },
-    { name: "Veg Momo + Coke", count: 18, maxCount: 482 },
-    { name: "Momo Platter + Soup", count: 18, maxCount: 482 },
-    { name: "Paneer Momo + Coke", count: 17, maxCount: 482 },
-  ];
-
-  // New Customers Data (keeping static for now - would need separate tracking)
-  const newCustomersData = {
-    labels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-    values: [35, 48, 52, 58, 65, 70, 62],
-  };
+  // Food combos and new customers data are now fetched from API
 
   return (
     <>
@@ -247,7 +321,7 @@ export default function Analytics() {
               className="p-2 hover:bg-orange-50 rounded-lg transition-colors duration-200 group"
               title="Refresh analytics"
             >
-              <ArrowUp className="h-5 w-5 text-gray-600 group-hover:text-orange-600 group-hover:rotate-180 transition-all duration-300" />
+              <RefreshCw className="h-5 w-5 text-gray-600 group-hover:text-orange-600 group-hover:rotate-180 transition-all duration-300" />
             </button>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="bg-gray-100">
@@ -401,7 +475,7 @@ export default function Analytics() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <RevenueChart height={280} />
+                    <RevenueChart data={revenueByHourData} dataType={revenueDataType} period={revenueTimeframe} height={280} />
                   </CardContent>
                 </Card>
 
@@ -447,7 +521,13 @@ export default function Analytics() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <HorizontalBarChart data={topSellingData} height={220} />
+                    {topSellingData.labels.length > 0 ? (
+                      <HorizontalBarChart data={topSellingData} height={220} />
+                    ) : (
+                      <div className="flex items-center justify-center h-[220px] text-gray-400">
+                        No data available for this period
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -467,24 +547,30 @@ export default function Analytics() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {leastSellingItems.map((item, index) => (
-                        <div key={index} className="flex items-center gap-3">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{item.name}</p>
-                            <div className="mt-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-orange-500 rounded-full"
-                                style={{ width: `${(item.count / item.maxCount) * 100}%` }}
-                              ></div>
+                    {leastSellingItems.length > 0 ? (
+                      <div className="space-y-3">
+                        {leastSellingItems.map((item, index) => (
+                          <div key={index} className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{item.name}</p>
+                              <div className="mt-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-orange-500 rounded-full"
+                                  style={{ width: `${(item.count / item.maxCount) * 100}%` }}
+                                ></div>
+                              </div>
                             </div>
+                            <span className="text-sm font-semibold text-gray-700 min-w-[3ch]">
+                              {item.count}
+                            </span>
                           </div>
-                          <span className="text-sm font-semibold text-gray-700 min-w-[3ch]">
-                            {item.count}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-[220px] text-gray-400">
+                        No data available for this period
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -504,24 +590,30 @@ export default function Analytics() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {foodCombos.map((combo, index) => (
-                        <div key={index} className="flex items-center gap-3">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{combo.name}</p>
-                            <div className="mt-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-orange-500 rounded-full"
-                                style={{ width: `${(combo.count / combo.maxCount) * 100}%` }}
-                              ></div>
+                    {foodCombos.length > 0 ? (
+                      <div className="space-y-3">
+                        {foodCombos.map((combo, index) => (
+                          <div key={index} className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{combo.name}</p>
+                              <div className="mt-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-orange-500 rounded-full"
+                                  style={{ width: `${(combo.count / combo.maxCount) * 100}%` }}
+                                ></div>
+                              </div>
                             </div>
+                            <span className="text-sm font-semibold text-gray-700 min-w-[3ch]">
+                              {combo.count}
+                            </span>
                           </div>
-                          <span className="text-sm font-semibold text-gray-700 min-w-[3ch]">
-                            {combo.count}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-[220px] text-gray-400">
+                        No data available for this period
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -531,7 +623,7 @@ export default function Analytics() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="bg-gradient-to-r from-orange-600 to-orange-500 bg-clip-text text-transparent">Peak Order Times</CardTitle>
-                    <Badge className="bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 border-0 shadow-md">Today</Badge>
+                    <Badge className="bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 border-0 shadow-md">7 days average</Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -544,16 +636,7 @@ export default function Analytics() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="bg-gradient-to-r from-orange-600 to-orange-500 bg-clip-text text-transparent">Recent Customer Activity</CardTitle>
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-orange-500"></span>
-                        <span>Dine-in (65%)</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-blue-500"></span>
-                        <span>Delivery (35%)</span>
-                      </div>
-                    </div>
+                    
                   </div>
                 </CardHeader>
                 <CardContent>

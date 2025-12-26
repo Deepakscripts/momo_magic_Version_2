@@ -114,6 +114,56 @@ const fetchAttendanceHistory = async (id, startDate, endDate) => {
     return response.data;
 };
 
+/**
+ * Download attendance CSV template with all active employees.
+ * @returns {Promise<Blob>} CSV file blob
+ */
+const downloadAttendanceTemplate = async () => {
+    const response = await api.get('/employees/attendance/download-csv', {
+        responseType: 'blob'
+    });
+    return response.data;
+};
+
+/**
+ * Upload attendance CSV and bulk update employee attendance.
+ * @param {File} file - CSV file to upload
+ * @returns {Promise<Object>} Upload results with summary
+ */
+const uploadAttendanceCSV = async (file) => {
+    const formData = new FormData();
+    formData.append('csvFile', file);
+
+    const response = await api.post('/employees/attendance/upload-csv', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data'
+        }
+    });
+    return response.data;
+};
+
+/**
+ * Get all attendance records with filters.
+ * @param {Object} filters - Optional filters (startDate, endDate, employeeId, status, page, limit)
+ * @returns {Promise<Object>} Attendance records with pagination and stats
+ */
+const getAllAttendance = async (filters = {}) => {
+    const params = new URLSearchParams();
+
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+    if (filters.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters.status && filters.status !== 'all') params.append('status', filters.status);
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+
+    const queryString = params.toString();
+    const url = queryString ? `/employees/attendance/all?${queryString}` : '/employees/attendance/all';
+
+    const response = await api.get(url);
+    return response.data;
+};
+
 const employeeService = {
     fetchAllEmployees,
     fetchEmployeeStats,
@@ -122,7 +172,10 @@ const employeeService = {
     updateEmployee,
     deleteEmployee,
     updateTodayAttendance,
-    fetchAttendanceHistory
+    fetchAttendanceHistory,
+    downloadAttendanceTemplate,
+    uploadAttendanceCSV,
+    getAllAttendance
 };
 
 export default employeeService;
