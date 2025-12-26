@@ -22,10 +22,16 @@ This PR completes the merge of the **ayush** branch into the **main** branch and
 ✅ **main ↔ test_deploy**: No differences  
 ✅ **All branches synchronized**: Confirmed
 
-### Changes Merged (from ayush branch)
+### Changes Merged
 
+**From ayush branch:**
 - **111 files changed**
 - **28,878 lines added**
+- **2,907 lines removed**
+
+**Total in this PR (including documentation):**
+- **113 files changed**
+- **29,051 lines added**
 - **2,907 lines removed**
 
 #### Key Features Added:
